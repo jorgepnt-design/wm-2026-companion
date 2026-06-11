@@ -47,6 +47,15 @@ const flagCodesByTeamId: Record<string, string> = {
   srb: "rs",
   tur: "tr",
   per: "pe",
+  cze: "cz",
+  bih: "ba",
+  hai: "ht",
+  cuw: "cw",
+  civ: "ci",
+  swe: "se",
+  cpv: "cv",
+  irq: "iq",
+  jor: "jo",
 };
 
 export const getFlagUrl = (teamId: string) => {

@@ -56,7 +56,7 @@ export default function App() {
           setFilters={setFilters}
         />
       )}
-      {page === "groups" && <GroupsPage groups={groups} teams={teams} favoriteIds={favoriteIds} />}
+      {page === "groups" && <GroupsPage groups={groups} teams={teams} favoriteIds={favoriteIds} matches={matches} />}
       {page === "settings" && <SettingsPage settings={settings} onChange={setSettings} calendarMatches={favoriteMatches} />}
     </Layout>
   );

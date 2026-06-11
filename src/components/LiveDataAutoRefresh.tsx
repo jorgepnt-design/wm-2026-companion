@@ -1,6 +1,7 @@
 import { useLiveScores } from "../hooks/useLiveScores";
 
 export function LiveDataAutoRefresh() {
-  useLiveScores({ autoRefresh: true, intervalMs: 5 * 60 * 1000 });
+  // 90 Sekunden: schnell genug fuer Live-Spielstaende, schonend fuer die FIFA-API.
+  useLiveScores({ autoRefresh: true, intervalMs: 90 * 1000 });
   return null;
 }

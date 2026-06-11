@@ -1,36 +1,30 @@
-import { matches as mockMatches } from "../data/matches";
+import { matches as staticMatches } from "../data/matches";
 import type { EnrichedMatch, Match, MatchFiltersState, Team } from "../types";
+import { liveDataService } from "./liveDataService";
 import { teamService } from "./teamService";
 
-const placeholderNames: Record<string, string> = {
-  tbd: "Noch offen",
-  "winner-a": "Sieger Gruppe A",
-  "winner-b": "Sieger Gruppe B",
-  "third-cde": "Dritter Gruppe C/D/E",
-  "third-fgh": "Dritter Gruppe F/G/H",
-  "winner-073": "Sieger Spiel 73",
-  "winner-074": "Sieger Spiel 74",
-  "winner-075": "Sieger Spiel 75",
-  "runner-a": "Zweiter Gruppe A",
-  "winner-r16-1": "Sieger Achtelfinale 1",
-  "winner-r16-2": "Sieger Achtelfinale 2",
-  "winner-r16-3": "Sieger Achtelfinale 3",
-  "winner-r16-4": "Sieger Achtelfinale 4",
-  "winner-qf-1": "Sieger Viertelfinale 1",
-  "winner-qf-2": "Sieger Viertelfinale 2",
-  "winner-qf-3": "Sieger Viertelfinale 3",
-  "winner-qf-4": "Sieger Viertelfinale 4",
-  "loser-sf-1": "Verlierer Halbfinale 1",
-  "loser-sf-2": "Verlierer Halbfinale 2",
-  "winner-sf-1": "Sieger Halbfinale 1",
-  "winner-sf-2": "Sieger Halbfinale 2",
+// K.o.-Platzhalter im offiziellen FIFA-Format: "1a" = Sieger Gruppe A, "2b" = Zweiter Gruppe B,
+// "3abcdf" = Dritter aus den Gruppen A/B/C/D/F, "w73" = Sieger Spiel 73, "ru101" = Verlierer Spiel 101.
+const placeholderLabel = (teamId: string): string => {
+  if (teamId === "tbd") return "Noch offen";
+  const groupRank = /^([123])([a-l]+)$/.exec(teamId);
+  if (groupRank) {
+    const rankWord = { "1": "Sieger", "2": "Zweiter", "3": "Dritter" }[groupRank[1]];
+    const groupLetters = groupRank[2].toUpperCase().split("").join("/");
+    return `${rankWord} Gruppe ${groupLetters}`;
+  }
+  const winner = /^w(\d+)$/.exec(teamId);
+  if (winner) return `Sieger Spiel ${winner[1]}`;
+  const loser = /^ru(\d+)$/.exec(teamId);
+  if (loser) return `Verlierer Spiel ${loser[1]}`;
+  return teamId.toUpperCase();
 };
 
-const teamLabel = (teamId: string) => teamService.getTeamById(teamId)?.name ?? placeholderNames[teamId] ?? teamId;
+const teamLabel = (teamId: string) => teamService.getTeamById(teamId)?.name ?? placeholderLabel(teamId);
 const teamFlag = (teamId: string) => teamService.getTeamById(teamId)?.flag;
 const teamDisplayLabel = (teamId: string) => {
   const team = teamService.getTeamById(teamId);
-  return team ? `${team.flag} ${team.name}` : placeholderNames[teamId] ?? teamId;
+  return team ? `${team.flag} ${team.name}` : placeholderLabel(teamId);
 };
 const favoriteIds = (favoriteTeams: Team[]) => new Set(favoriteTeams.map((team) => team.id));
 
@@ -48,17 +42,37 @@ const enrich = (match: Match): EnrichedMatch => ({
 });
 
 export const matchService = {
+  // Statischer Spielplan + zwischengespeicherte Live-Updates (Ergebnisse, Status, K.o.-Teams).
+  // Praesentationsfelder wie Stadion und Gruppe kommen immer aus den statischen Daten.
   getMatches(): Match[] {
-    return mockMatches;
+    const cached = liveDataService.getCachedLiveData()?.matches;
+    if (!cached?.length) return staticMatches;
+    const byId = new Map(cached.map((match) => [match.id, match]));
+    return staticMatches.map((match) => {
+      const update = byId.get(match.id);
+      if (!update) return match;
+      return {
+        ...match,
+        teamAId: update.teamAId ?? match.teamAId,
+        teamBId: update.teamBId ?? match.teamBId,
+        dateUtc: update.dateUtc ?? match.dateUtc,
+        status: update.status ?? match.status,
+        scoreA: update.scoreA ?? null,
+        scoreB: update.scoreB ?? null,
+        penaltyA: update.penaltyA ?? null,
+        penaltyB: update.penaltyB ?? null,
+        liveMinute: update.liveMinute ?? null,
+      };
+    });
   },
-  getEnrichedMatches(matches: Match[] = mockMatches): EnrichedMatch[] {
-    return matches.map(enrich);
+  getEnrichedMatches(matches?: Match[]): EnrichedMatch[] {
+    return (matches ?? this.getMatches()).map(enrich);
   },
   getFavoriteMatches(favoriteTeams: Team[]): Match[] {
-    return mockMatches.filter((match) => isFavoriteMatch(match, favoriteTeams));
+    return this.getMatches().filter((match) => isFavoriteMatch(match, favoriteTeams));
   },
   getTeamMatches(teamId: string): Match[] {
-    return mockMatches.filter((match) => match.teamAId === teamId || match.teamBId === teamId);
+    return this.getMatches().filter((match) => match.teamAId === teamId || match.teamBId === teamId);
   },
   getNextFavoriteMatch(favoriteTeams: Team[]): Match | undefined {
     const now = Date.now();
@@ -67,7 +81,7 @@ export const matchService = {
       .sort((a, b) => new Date(a.dateUtc).getTime() - new Date(b.dateUtc).getTime())[0];
   },
   filterMatches(filters: MatchFiltersState, favoriteTeams: Team[]): Match[] {
-    return mockMatches.filter((match) => {
+    return this.getMatches().filter((match) => {
       const favorite = isFavoriteMatch(match, favoriteTeams);
       const labels = `${teamLabel(match.teamAId)} ${teamLabel(match.teamBId)}`.toLowerCase();
       const byRound =

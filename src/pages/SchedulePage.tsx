@@ -24,6 +24,8 @@ export function SchedulePage({ groups, matches, allMatches, favoriteMatches, fav
       <div className="mb-4 flex flex-wrap gap-3">
         <CalendarExportButton matches={favoriteMatches} settings={settings} />
         <CalendarExportButton matches={allMatches} settings={settings} label="Alle Spiele exportieren" />
+      </div>
+      <div className="mb-4">
         <LiveUpdateButton />
       </div>
       <div className="mb-4">

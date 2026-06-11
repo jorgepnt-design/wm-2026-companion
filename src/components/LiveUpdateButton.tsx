@@ -3,7 +3,7 @@ import { useLiveScores } from "../hooks/useLiveScores";
 
 export function LiveUpdateButton() {
   const { lastUpdate, isUpdating, error, refreshLiveData } = useLiveScores();
-  const sourceLabel = lastUpdate?.source === "api" ? "API" : "Mock";
+  const sourceLabel = lastUpdate?.source === "fifa" ? "FIFA (offiziell)" : lastUpdate?.source === "api" ? "Eigene API" : "Demo-Daten";
   const lastChecked = lastUpdate ? new Date(lastUpdate.updatedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : "Noch nicht geprüft";
 
   return (
@@ -36,7 +36,7 @@ export function LiveUpdateButton() {
           Live-Daten aktualisieren
         </button>
       </div>
-      <p className="mt-3 text-xs text-white/50">Offizielle Daten werden automatisch übernommen, sobald eine echte API-Quelle konfiguriert ist.</p>
+      <p className="mt-3 text-xs text-white/50">Ergebnisse und Spielstände kommen von der offiziellen FIFA-Datenquelle und aktualisieren sich automatisch alle 90 Sekunden.</p>
     </div>
   );
 }

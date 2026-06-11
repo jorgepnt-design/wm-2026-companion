@@ -1,21 +1,28 @@
-import type { Match, TeamLineup, TeamSquad } from "../types";
+import type { LiveDataSource, Match, TeamLineup, TeamSquad } from "../types";
 import { storageService } from "./storageService";
 
 export interface CachedLiveData {
   matches: Match[];
   squads: TeamSquad[];
   lineups: TeamLineup[];
-  source: "mock" | "api";
+  source: LiveDataSource;
   updatedAt: string;
 }
 
 const KEY = "live-data";
 
+// In-Memory-Kopie, damit nicht bei jedem Render localStorage geparst wird.
+let memoryCache: CachedLiveData | null | undefined;
+
 export const liveDataService = {
   getCachedLiveData(): CachedLiveData | null {
-    return storageService.get<CachedLiveData | null>(KEY, null);
+    if (memoryCache === undefined) {
+      memoryCache = storageService.get<CachedLiveData | null>(KEY, null);
+    }
+    return memoryCache;
   },
   saveLiveData(data: CachedLiveData): void {
+    memoryCache = data;
     storageService.set(KEY, data);
     window.dispatchEvent(new CustomEvent("wm2026:live-data-updated", { detail: data }));
   },

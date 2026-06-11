@@ -1,6 +1,7 @@
 import { groups } from "../data/groups";
-import { standings } from "../data/standings";
-import type { Group, GroupId, Standing } from "../types";
+import type { Group, GroupId, Match, Standing } from "../types";
+import { matchService } from "./matchService";
+import { standingsService } from "./standingsService";
 
 export const groupService = {
   getGroups(): Group[] {
@@ -9,7 +10,7 @@ export const groupService = {
   getGroupById(groupId: GroupId): Group | undefined {
     return groups.find((group) => group.id === groupId);
   },
-  getStandings(groupId: GroupId): Standing[] {
-    return standings.filter((standing) => standing.group === groupId);
+  getStandings(groupId: GroupId, matches: Match[] = matchService.getMatches()): Standing[] {
+    return standingsService.getGroupStandings(matches, groupId);
   },
 };

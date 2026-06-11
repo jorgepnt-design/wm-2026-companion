@@ -10,6 +10,7 @@ export type Round =
   | "Finale";
 
 export type MatchStatus = "scheduled" | "live" | "finished" | "postponed";
+export type LiveDataSource = "mock" | "fifa" | "api";
 export type CalendarProvider = "google" | "apple" | "outlook" | "other";
 export type ThemeMode = "dark" | "light" | "system";
 export type PlayerPosition = "GK" | "DEF" | "MID" | "FWD";
@@ -108,6 +109,8 @@ export interface Match {
   status: MatchStatus;
   scoreA: number | null;
   scoreB: number | null;
+  penaltyA?: number | null;
+  penaltyB?: number | null;
   liveMinute?: number | null;
 }
 

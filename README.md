@@ -1,6 +1,6 @@
 # Jorge´s WM-Planer 2026
 
-Moderne, responsive React-PWA für einen personalisierten Spielplan zur Fußball-WM 2026. Die erste Version läuft vollständig lokal mit Mock-Daten: Favoriten, Einstellungen und Kalenderexport funktionieren ohne API-Keys.
+Moderne, responsive React-PWA für einen personalisierten Spielplan zur Fußball-WM 2026 mit echten Live-Ergebnissen. Ergebnisse, Spielstatus und Spielminute kommen von der offiziellen, öffentlichen FIFA-API (`api.fifa.com`) – ohne API-Key. Favoriten, Einstellungen und Kalenderexport funktionieren lokal und offline.
 
 ## Funktionen
 
@@ -11,11 +11,12 @@ Moderne, responsive React-PWA für einen personalisierten Spielplan zur Fußball
 - Team-Detailpanel mit großer Flagge, Gruppe, Spielen, Kader, Aufstellung und Favorit-Status
 - Personalisierter Spielplan mit Favoriten-Hervorhebung und lokaler Zeitzone
 - Filter nach Runde, Gruppe, Datum und Team-Suche
-- Sichtbarer Datenstatus für Mock-, vorläufige und offizielle Daten
+- Echte Ergebnisse und Live-Spielstände von der offiziellen FIFA-API (automatische Aktualisierung alle 90 Sekunden + manueller Refresh)
+- Dashboard-Bereiche „Live jetzt“ und „Heute“ mit Status-Badges (Live mit Spielminute, Beendet, Geplant)
+- Gruppentabellen werden automatisch aus den Ergebnissen berechnet (Punkte, Tore, Differenz, Platzierung)
 - Live-Datenstatus mit letzter Aktualisierung, Quelle und Fehleranzeige
 - Statistikbereich mit Favoriten, Lieblingsspielen und Gruppenspielen
 - `.ics`-Export für Portugal, alle Favoriten oder alle Spiele
-- Gruppenübersicht mit Tabellenstruktur für spätere echte Stände
 - PWA mit Manifest, Service Worker, Icons und Offline-Fallback
 - Services und Typen für spätere Auth-, Cloud-, Live-API- und Push-Anbindung
 
@@ -59,20 +60,16 @@ src/
   styles/       Tailwind-Einstieg
 ```
 
-## Mock-Daten ersetzen
+## Datenquellen
 
-Aktuelle Daten liegen zentral in:
+Die App trennt statische Turnierdaten von dynamischen Ergebnisdaten:
 
-- `src/data/teams.ts`
-- `src/data/groups.ts`
-- `src/data/matches.ts`
-- `src/data/stadiums.ts`
-- `src/data/squads.ts`
-- `src/data/standings.ts`
+- **Statischer Spielplan** (`src/data/matches.ts`): aus dem offiziellen FIFA-Kalender generiert (Spielnummern, Stadien, Gruppen, Anstoßzeiten). Neu erzeugen mit `powershell -File scripts/generate-matches.ps1`. Dient gleichzeitig als Offline-Fallback.
+- **Live-Ergebnisse** (`src/services/fifaApi.ts` + `footballApi.ts`): Ergebnisse, Spielstatus, Spielminute und K.-o.-Paarungen werden zur Laufzeit von `api.fifa.com` geladen, im `localStorage` gecacht und über `matchService` in den Spielplan gemerged.
+- **Tabellen** (`src/services/standingsService.ts`): werden vollständig aus den Ergebnissen berechnet (Punkte, Tordifferenz, erzielte Tore; vereinfachte FIFA-Sortierung).
+- **Kader/Aufstellungen** (`src/data/squads.ts`): weiterhin Platzhalter, bis eine offizielle Quelle angebunden ist.
 
-Diese Dateien sind als `MOCK_DATA` / `TODO_OFFICIAL_DATA` markiert. Sobald finale oder lizenzierte Daten verfügbar sind, können diese Dateien oder die Services ersetzt werden. Die UI arbeitet gegen `teamService`, `groupService`, `matchService` und `footballApi`, nicht direkt gegen externe Anbieter.
-
-Wichtig für die aktuelle Mock-Version: Gruppe K enthält Portugal, DR Kongo, Usbekistan und Kolumbien. Alle Gruppen A bis L enthalten exakt 4 Teams, insgesamt also 48 Teams. Kader und Aufstellungen sind bewusst als Mock-Daten markiert, bis offizielle Spielerlisten und Startaufstellungen bekannt sind.
+Optional kann über `VITE_FOOTBALL_API_BASE_URL` und `VITE_FOOTBALL_API_KEY` eine eigene API vorgeschaltet werden; sie hat Vorrang vor der FIFA-Quelle und muss JSON im Format `LiveDataResponse` liefern. Die UI arbeitet ausschließlich gegen `teamService`, `groupService`, `matchService`, `standingsService` und `footballApi`.
 
 ## Spätere Supabase- oder Firebase-Anbindung
 
