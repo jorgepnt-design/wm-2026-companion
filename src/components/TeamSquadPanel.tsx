@@ -1,8 +1,9 @@
-import { CalendarDays, Info, Shirt, Star, Users, X } from "lucide-react";
+import { CalendarDays, Info, Loader2, Shirt, Star, Users, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { fifaApi } from "../services/fifaApi";
 import { matchService } from "../services/matchService";
 import { teamService } from "../services/teamService";
-import type { Match, PlayerPosition, Team } from "../types";
+import type { Match, PlayerPosition, Team, TeamSquad } from "../types";
 import { formatLocalDate, formatLocalTime } from "../utils/date";
 import { DataStatusBadge } from "./DataStatusBadge";
 import { FlagIcon } from "./FlagIcon";
@@ -26,18 +27,33 @@ const positionLabels: Record<PlayerPosition, string> = {
 const positions: PlayerPosition[] = ["GK", "DEF", "MID", "FWD"];
 
 export function TeamSquadPanel({ team, matches, isFavorite, onToggleFavorite, onClose }: Props) {
-  const [, setLiveVersion] = useState(0);
-  const squad = teamService.getSquad(team.id);
+  // Mock-Kader als Startwert/Fallback, der offizielle FIFA-Kader ersetzt ihn nach dem Laden.
+  const [squad, setSquad] = useState<TeamSquad | undefined>(() => teamService.getSquad(team.id));
+  const [squadLoading, setSquadLoading] = useState(false);
   const lineup = teamService.getLineup(team.id);
   const nextMatch = matches
     .filter((match) => new Date(match.dateUtc).getTime() >= Date.now())
     .sort((a, b) => new Date(a.dateUtc).getTime() - new Date(b.dateUtc).getTime())[0];
 
   useEffect(() => {
-    const update = () => setLiveVersion((version) => version + 1);
-    window.addEventListener("wm2026:live-data-updated", update);
-    return () => window.removeEventListener("wm2026:live-data-updated", update);
-  }, []);
+    let cancelled = false;
+    setSquad(teamService.getSquad(team.id));
+    setSquadLoading(true);
+    fifaApi
+      .fetchTeamSquad(team)
+      .then((officialSquad) => {
+        if (!cancelled) setSquad(officialSquad);
+      })
+      .catch(() => {
+        // FIFA nicht erreichbar -> Mock-Kader bleibt sichtbar, Badge zeigt "Vorlaeufige Daten".
+      })
+      .finally(() => {
+        if (!cancelled) setSquadLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [team]);
 
   return (
     <section className="rounded-lg border border-gold/30 bg-night/95 p-4 shadow-glow">
@@ -83,15 +99,17 @@ export function TeamSquadPanel({ team, matches, isFavorite, onToggleFavorite, on
               </div>
             ) : (
               <div className="mt-3 rounded-md border border-white/10 bg-white/8 p-3">
-                <p className="font-bold">Noch nicht offiziell bekannt</p>
-                <p className="mt-1 text-sm text-white/60">{lineup?.note}</p>
+                <p className="font-bold">Wird kurz vor Anstoß veröffentlicht</p>
+                <p className="mt-1 text-sm text-white/60">
+                  Die offizielle Startelf findest du bei jedem Spiel unten unter „Tore & Aufstellung“, sobald die FIFA sie freigibt (ca. 1 Stunde vor Anstoß).
+                </p>
               </div>
             )}
             <div className="mt-3 flex items-start gap-2 rounded-md border border-gold/20 bg-gold/10 p-3 text-sm text-gold">
               <Info className="mt-0.5 shrink-0" size={16} aria-hidden />
               <p>
-                Status: {lineup?.status === "official" ? "Offiziell" : lineup?.status === "provisional" ? "Vorläufig" : "Mock-Daten"}
-                {lineup?.updatedAt ? ` · geprüft ${new Date(lineup.updatedAt).toLocaleTimeString("de-DE")}` : ""}
+                Kader: {squad?.status === "official" ? "offiziell (FIFA)" : "vorläufig"}
+                {squad?.updatedAt ? ` · Stand ${new Date(squad.updatedAt).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}` : ""}
               </p>
             </div>
           </div>
@@ -112,6 +130,7 @@ export function TeamSquadPanel({ team, matches, isFavorite, onToggleFavorite, on
         <div className="rounded-lg border border-white/10 bg-white/7 p-4">
           <p className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gold">
             <Users size={16} aria-hidden /> Kader
+            {squadLoading && <Loader2 className="animate-spin text-white/50" size={15} aria-hidden />}
           </p>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             {positions.map((position) => (
@@ -123,10 +142,10 @@ export function TeamSquadPanel({ team, matches, isFavorite, onToggleFavorite, on
                     .map((player) => (
                       <div key={player.id} className="flex items-center justify-between gap-3 rounded-md bg-white/7 px-3 py-2 text-sm">
                         <span className="font-semibold">
-                          <span className="mr-2 text-gold">#{player.shirtNumber}</span>
+                          <span className="mr-2 inline-block w-7 text-right tabular-nums text-gold">#{player.shirtNumber}</span>
                           {player.name}
                         </span>
-                        <span className="text-xs text-white/45">{player.club}</span>
+                        <span className="shrink-0 text-xs text-white/45">{player.club ?? (player.age ? `${player.age} J.` : "")}</span>
                       </div>
                     ))}
                 </div>

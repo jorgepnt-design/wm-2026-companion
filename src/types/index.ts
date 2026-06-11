@@ -49,6 +49,8 @@ export interface Team {
   groupName: string;
   flag: string;
   fifaCode: string;
+  // FIFA-interne Team-ID fuer Kader-Abrufe (api.fifa.com).
+  fifaTeamId: string;
 }
 
 export interface Player {

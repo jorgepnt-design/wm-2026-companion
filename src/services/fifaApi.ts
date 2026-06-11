@@ -1,5 +1,6 @@
 import { teams } from "../data/teams";
-import type { Match, MatchStatus } from "../types";
+import type { Match, MatchStatus, Player, PlayerPosition, Team, TeamSquad } from "../types";
+import { storageService } from "./storageService";
 
 // Offizielle, oeffentliche FIFA-API (kein API-Key noetig, CORS fuer Browser freigegeben).
 // idCompetition 17 = FIFA World Cup, idSeason 285023 = WM 2026 (USA/Kanada/Mexiko).
@@ -133,6 +134,32 @@ const toLineupPlayer = (player: FifaPlayer): LineupPlayer => ({
   captain: player.Captain === true,
 });
 
+// --- Offizielle Kader ---
+
+interface FifaSquadPlayer {
+  IdPlayer?: string | null;
+  PlayerName?: FifaLocalized[];
+  ShortName?: FifaLocalized[];
+  JerseyNum?: number | null;
+  Position?: number | null; // 0 = Tor, 1 = Abwehr, 2 = Mittelfeld, 3 = Sturm
+  BirthDate?: string | null;
+}
+
+interface FifaSquadResponse {
+  Players?: FifaSquadPlayer[];
+}
+
+const positionByCode: Record<number, PlayerPosition> = { 0: "GK", 1: "DEF", 2: "MID", 3: "FWD" };
+
+// Kader aendern sich waehrend des Turniers praktisch nicht -> grosszuegig cachen.
+const SQUAD_TTL_MS = 12 * 60 * 60 * 1000;
+
+const ageFromBirthDate = (birthDate: string | null | undefined): number | undefined => {
+  if (!birthDate) return undefined;
+  const ms = Date.now() - new Date(birthDate).getTime();
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 31_557_600_000) : undefined;
+};
+
 const toTeamLineup = (team: FifaLiveTeam | null | undefined): TeamMatchLineup | undefined => {
   if (!team) return undefined;
   const players = team.Players ?? [];
@@ -209,5 +236,41 @@ export const fifaApi = {
       .sort((a, b) => a.sortMinute - b.sortMinute);
 
     return { goals, home: toTeamLineup(home), away: toTeamLineup(away) };
+  },
+
+  async fetchTeamSquad(team: Team): Promise<TeamSquad> {
+    const cacheKey = `fifa-squad-${team.id}`;
+    const cached = storageService.get<TeamSquad | null>(cacheKey, null);
+    if (cached && cached.players.length > 0 && Date.now() - new Date(cached.updatedAt).getTime() < SQUAD_TTL_MS) {
+      return cached;
+    }
+
+    const url = `https://api.fifa.com/api/v3/teams/${team.fifaTeamId}/squad?idCompetition=${COMPETITION_ID}&idSeason=${SEASON_ID}&language=de`;
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`Kader konnte nicht geladen werden (HTTP ${response.status})`);
+    const data = (await response.json()) as FifaSquadResponse;
+
+    const players: Player[] = (data.Players ?? [])
+      .map((player) => ({
+        id: player.IdPlayer ?? `${team.id}-${player.JerseyNum ?? 0}`,
+        teamId: team.id,
+        name: localized(player.PlayerName) || localized(player.ShortName) || "Unbekannt",
+        shirtNumber: player.JerseyNum ?? 0,
+        position: positionByCode[player.Position ?? -1] ?? "MID",
+        age: ageFromBirthDate(player.BirthDate),
+        status: "official" as const,
+      }))
+      .sort((a, b) => a.shirtNumber - b.shirtNumber);
+    if (players.length === 0) throw new Error("Die FIFA hat fuer dieses Team noch keinen Kader veroeffentlicht.");
+
+    const squad: TeamSquad = {
+      teamId: team.id,
+      updatedAt: new Date().toISOString(),
+      status: "official",
+      note: "Offizieller WM-2026-Kader (Quelle: FIFA).",
+      players,
+    };
+    storageService.set(cacheKey, squad);
+    return squad;
   },
 };
