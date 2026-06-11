@@ -62,6 +62,8 @@ export const matchService = {
         penaltyA: update.penaltyA ?? null,
         penaltyB: update.penaltyB ?? null,
         liveMinute: update.liveMinute ?? null,
+        fifaMatchId: update.fifaMatchId ?? null,
+        fifaStageId: update.fifaStageId ?? null,
       };
     });
   },

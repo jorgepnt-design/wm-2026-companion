@@ -1,5 +1,6 @@
 import { MapPin, Star } from "lucide-react";
 import { FlagIcon } from "./FlagIcon";
+import { MatchDetailsPanel } from "./MatchDetailsPanel";
 import { matchService } from "../services/matchService";
 import { teamService } from "../services/teamService";
 import type { Match } from "../types";
@@ -73,7 +74,7 @@ export function MatchCard({ match, isFavorite, timezone, children }: Props) {
               {hadPenalties && <span className="block text-[11px] font-bold opacity-80">{match.penaltyA}:{match.penaltyB} i. E.</span>}
             </>
           ) : (
-            <span className="text-white/70">{formatLocalTime(match.dateUtc, timezone).replace(/\s.*/, "")}</span>
+            <span className="text-white/50">vs</span>
           )}
         </div>
         <p className="inline-flex min-w-0 items-center justify-end gap-2 text-right text-base font-black sm:text-lg">
@@ -91,6 +92,7 @@ export function MatchCard({ match, isFavorite, timezone, children }: Props) {
           </span>
         )}
       </div>
+      <MatchDetailsPanel match={match} />
       {children && <div className="mt-4 border-t border-white/10 pt-4">{children}</div>}
     </article>
   );

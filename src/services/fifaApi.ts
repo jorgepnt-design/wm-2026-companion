@@ -14,6 +14,8 @@ interface FifaSide {
 }
 
 interface FifaMatch {
+  IdMatch?: string | null;
+  IdStage?: string | null;
   MatchNumber?: number | null;
   Date?: string | null;
   Home?: FifaSide | null;
@@ -54,6 +56,96 @@ const resolveTeamId = (side: FifaSide | null | undefined): string | undefined =>
   return code ? teamIdByFifaCode.get(code) : undefined;
 };
 
+// --- Spieldetails (Tore, Aufstellungen) ---
+
+interface FifaLocalized {
+  Locale?: string;
+  Description?: string;
+}
+
+interface FifaGoal {
+  IdPlayer?: string | null;
+  IdTeam?: string | null;
+  Minute?: string | null;
+}
+
+interface FifaPlayer {
+  IdPlayer?: string | null;
+  ShirtNumber?: number | null;
+  Status?: number | null; // 1 = Startelf, 2 = Bank
+  Captain?: boolean | null;
+  ShortName?: FifaLocalized[];
+  PlayerName?: FifaLocalized[];
+}
+
+interface FifaLiveTeam {
+  IdTeam?: string | null;
+  Abbreviation?: string | null;
+  Tactics?: string | null;
+  Goals?: FifaGoal[];
+  Players?: FifaPlayer[];
+  TeamName?: FifaLocalized[];
+}
+
+interface FifaLiveMatch {
+  HomeTeam?: FifaLiveTeam | null;
+  AwayTeam?: FifaLiveTeam | null;
+}
+
+export interface GoalEvent {
+  minute: string;
+  sortMinute: number;
+  playerName: string;
+  teamCode: string;
+}
+
+export interface LineupPlayer {
+  shirtNumber: number;
+  name: string;
+  captain: boolean;
+}
+
+export interface TeamMatchLineup {
+  teamCode: string;
+  teamName: string;
+  formation: string | null;
+  starters: LineupPlayer[];
+  bench: LineupPlayer[];
+}
+
+export interface MatchDetails {
+  goals: GoalEvent[];
+  home?: TeamMatchLineup;
+  away?: TeamMatchLineup;
+}
+
+const localized = (entries?: FifaLocalized[]) => entries?.[0]?.Description ?? "";
+
+// "45'+2'" -> 45.2 fuer die Sortierung, Anzeige bleibt der Originalstring.
+const goalSortValue = (minute: string) => {
+  const parts = minute.match(/\d+/g) ?? [];
+  return Number(parts[0] ?? 0) + Number(parts[1] ?? 0) / 10;
+};
+
+const toLineupPlayer = (player: FifaPlayer): LineupPlayer => ({
+  shirtNumber: player.ShirtNumber ?? 0,
+  name: localized(player.ShortName) || localized(player.PlayerName) || "Unbekannt",
+  captain: player.Captain === true,
+});
+
+const toTeamLineup = (team: FifaLiveTeam | null | undefined): TeamMatchLineup | undefined => {
+  if (!team) return undefined;
+  const players = team.Players ?? [];
+  const byShirt = (a: LineupPlayer, b: LineupPlayer) => a.shirtNumber - b.shirtNumber;
+  return {
+    teamCode: team.Abbreviation ?? "",
+    teamName: localized(team.TeamName),
+    formation: team.Tactics ?? null,
+    starters: players.filter((player) => player.Status === 1).map(toLineupPlayer).sort(byShirt),
+    bench: players.filter((player) => player.Status === 2).map(toLineupPlayer).sort(byShirt),
+  };
+};
+
 export const fifaApi = {
   async fetchMatchUpdates(): Promise<MatchUpdate[]> {
     const response = await fetch(CALENDAR_URL, { headers: { Accept: "application/json" } });
@@ -74,6 +166,8 @@ export const fifaApi = {
           penaltyA: item.HomeTeamPenaltyScore ?? null,
           penaltyB: item.AwayTeamPenaltyScore ?? null,
           liveMinute: status === "live" ? parseLiveMinute(item.MatchTime) : null,
+          fifaMatchId: item.IdMatch ?? null,
+          fifaStageId: item.IdStage ?? null,
         };
         if (item.Date) update.dateUtc = item.Date;
         // K.o.-Spiele: Teams werden ergaenzt, sobald die FIFA sie kennt (sonst bleiben Platzhalter).
@@ -83,5 +177,37 @@ export const fifaApi = {
         if (teamBId) update.teamBId = teamBId;
         return update;
       });
+  },
+
+  async fetchMatchDetails(stageId: string, matchId: string): Promise<MatchDetails> {
+    const url = `https://api.fifa.com/api/v3/live/football/${COMPETITION_ID}/${SEASON_ID}/${stageId}/${matchId}?language=de`;
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`Spieldetails konnten nicht geladen werden (HTTP ${response.status})`);
+    const data = (await response.json()) as FifaLiveMatch;
+
+    const home = data.HomeTeam;
+    const away = data.AwayTeam;
+    // Eigentore werden dem gegnerischen Team gutgeschrieben -> Spielername in beiden Kadern suchen.
+    const allPlayers = [...(home?.Players ?? []), ...(away?.Players ?? [])];
+    const playerName = (idPlayer: string | null | undefined) => {
+      const player = allPlayers.find((item) => item.IdPlayer === idPlayer);
+      return player ? localized(player.ShortName) || localized(player.PlayerName) : "Unbekannt";
+    };
+    const teamCode = (idTeam: string | null | undefined) =>
+      idTeam === home?.IdTeam ? home?.Abbreviation ?? "" : idTeam === away?.IdTeam ? away?.Abbreviation ?? "" : "";
+
+    const goals: GoalEvent[] = [...(home?.Goals ?? []), ...(away?.Goals ?? [])]
+      .map((goal) => {
+        const minute = goal.Minute ?? "";
+        return {
+          minute,
+          sortMinute: goalSortValue(minute),
+          playerName: playerName(goal.IdPlayer),
+          teamCode: teamCode(goal.IdTeam),
+        };
+      })
+      .sort((a, b) => a.sortMinute - b.sortMinute);
+
+    return { goals, home: toTeamLineup(home), away: toTeamLineup(away) };
   },
 };

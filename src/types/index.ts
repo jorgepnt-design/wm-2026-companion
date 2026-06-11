@@ -112,6 +112,9 @@ export interface Match {
   penaltyA?: number | null;
   penaltyB?: number | null;
   liveMinute?: number | null;
+  // FIFA-IDs fuer den Spieldetail-Abruf (Tore, Aufstellungen); kommen mit dem Live-Update.
+  fifaMatchId?: string | null;
+  fifaStageId?: string | null;
 }
 
 export interface EnrichedMatch extends Match {
