@@ -36,7 +36,7 @@ export function LiveUpdateButton() {
           Live-Daten aktualisieren
         </button>
       </div>
-      <p className="mt-3 text-xs text-white/50">Ergebnisse und Spielstände kommen von der offiziellen FIFA-Datenquelle und aktualisieren sich automatisch jede Minute.</p>
+      <p className="mt-3 text-xs text-white/50">Ergebnisse und Spielstände kommen von der offiziellen FIFA-Datenquelle und aktualisieren sich automatisch alle 30 Sekunden.</p>
     </div>
   );
 }
