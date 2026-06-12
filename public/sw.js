@@ -1,4 +1,4 @@
-const CACHE_NAME = "wm-2026-companion-v17";
+const CACHE_NAME = "wm-2026-companion-v18";
 const BASE_PATH = "/wm-2026-companion/";
 const STATIC_ASSETS = [
   BASE_PATH,
@@ -27,17 +27,28 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  const url = new URL(event.request.url);
+
+  // API- und alle Fremd-Requests (z. B. api.fifa.com, flagcdn.com) NIE aus dem Cache
+  // beantworten – sonst frieren Live-Ergebnisse ein. Immer direkt ans Netz.
+  if (url.origin !== self.location.origin) return;
+
   if (event.request.mode === "navigate") {
     event.respondWith(fetch(event.request).catch(() => caches.match(`${BASE_PATH}offline.html`)));
     return;
   }
+
+  // Eigene statische Dateien: cache-first mit Nachladen ins Cache.
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request)
         .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
           return response;
         })
         .catch(() => caches.match(`${BASE_PATH}offline.html`));

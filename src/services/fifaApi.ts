@@ -175,7 +175,9 @@ const toTeamLineup = (team: FifaLiveTeam | null | undefined): TeamMatchLineup | 
 
 export const fifaApi = {
   async fetchMatchUpdates(): Promise<MatchUpdate[]> {
-    const response = await fetch(CALENDAR_URL, { headers: { Accept: "application/json" } });
+    // no-store: FIFA sendet max-age=300 – ohne das wuerde der Browser 5 Minuten lang
+    // dieselbe Antwort liefern und Live-Spielstaende einfrieren.
+    const response = await fetch(CALENDAR_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
     if (!response.ok) throw new Error(`FIFA-Datenabruf fehlgeschlagen (HTTP ${response.status})`);
     const data = (await response.json()) as FifaCalendarResponse;
     const results = data.Results ?? [];
@@ -208,7 +210,7 @@ export const fifaApi = {
 
   async fetchMatchDetails(stageId: string, matchId: string): Promise<MatchDetails> {
     const url = `https://api.fifa.com/api/v3/live/football/${COMPETITION_ID}/${SEASON_ID}/${stageId}/${matchId}?language=de`;
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
     if (!response.ok) throw new Error(`Spieldetails konnten nicht geladen werden (HTTP ${response.status})`);
     const data = (await response.json()) as FifaLiveMatch;
 
@@ -246,7 +248,7 @@ export const fifaApi = {
     }
 
     const url = `https://api.fifa.com/api/v3/teams/${team.fifaTeamId}/squad?idCompetition=${COMPETITION_ID}&idSeason=${SEASON_ID}&language=de`;
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
     if (!response.ok) throw new Error(`Kader konnte nicht geladen werden (HTTP ${response.status})`);
     const data = (await response.json()) as FifaSquadResponse;
 
