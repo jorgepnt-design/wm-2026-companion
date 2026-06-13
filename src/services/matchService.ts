@@ -83,18 +83,21 @@ export const matchService = {
       .sort((a, b) => new Date(a.dateUtc).getTime() - new Date(b.dateUtc).getTime())[0];
   },
   filterMatches(filters: MatchFiltersState, favoriteTeams: Team[]): Match[] {
-    return this.getMatches().filter((match) => {
-      const favorite = isFavoriteMatch(match, favoriteTeams);
-      const labels = `${teamLabel(match.teamAId)} ${teamLabel(match.teamBId)}`.toLowerCase();
-      const byRound =
-        filters.round === "Alle Spiele" ||
-        (filters.round === "Nur meine Teams" ? favorite : match.round === filters.round);
-      const bySearch = !filters.search || labels.includes(filters.search.trim().toLowerCase());
-      const byGroup = !filters.group || match.group === filters.group;
-      const byDate = !filters.date || match.dateUtc.slice(0, 10) === filters.date;
-      const byStatus = !filters.status || match.status === filters.status;
-      return byRound && bySearch && byGroup && byDate && byStatus;
-    });
+    return this.getMatches()
+      .filter((match) => {
+        const favorite = isFavoriteMatch(match, favoriteTeams);
+        const labels = `${teamLabel(match.teamAId)} ${teamLabel(match.teamBId)}`.toLowerCase();
+        const byRound =
+          filters.round === "Alle Spiele" ||
+          (filters.round === "Nur meine Teams" ? favorite : match.round === filters.round);
+        const bySearch = !filters.search || labels.includes(filters.search.trim().toLowerCase());
+        const byGroup = !filters.group || match.group === filters.group;
+        const byDate = !filters.date || match.dateUtc.slice(0, 10) === filters.date;
+        const byStatus = !filters.status || match.status === filters.status;
+        return byRound && bySearch && byGroup && byDate && byStatus;
+      })
+      // Chronologisch: beendete Spiele zuerst, dann das naechste anstehende usw.
+      .sort((a, b) => new Date(a.dateUtc).getTime() - new Date(b.dateUtc).getTime());
   },
   getTeamLabel: teamLabel,
   getTeamDisplayLabel: teamDisplayLabel,
