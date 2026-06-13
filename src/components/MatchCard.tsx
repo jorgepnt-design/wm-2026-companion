@@ -1,6 +1,7 @@
 import { MapPin, Star } from "lucide-react";
 import { FlagIcon } from "./FlagIcon";
 import { MatchDetailsPanel } from "./MatchDetailsPanel";
+import { MatchStatsPanel } from "./MatchStatsPanel";
 import { matchService } from "../services/matchService";
 import { teamService } from "../services/teamService";
 import type { Match } from "../types";
@@ -93,6 +94,7 @@ export function MatchCard({ match, isFavorite, timezone, children }: Props) {
         )}
       </div>
       <MatchDetailsPanel match={match} />
+      <MatchStatsPanel match={match} />
       {children && <div className="mt-4 border-t border-white/10 pt-4">{children}</div>}
     </article>
   );

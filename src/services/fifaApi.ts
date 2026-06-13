@@ -149,6 +149,59 @@ export interface MatchDetails {
   away?: TeamMatchLineup;
 }
 
+// --- Statistik & Spielverlauf (Timeline) ---
+
+export interface TeamMatchStat {
+  shots: number;
+  corners: number;
+  fouls: number;
+  offsides: number;
+  saves: number;
+  yellow: number;
+  red: number;
+  substitutions: number;
+}
+
+export type TimelineSide = "home" | "away" | "neutral";
+
+export interface TimelineEntry {
+  minute: string;
+  sortValue: number;
+  order: number;
+  type: number;
+  label: string;
+  description: string;
+  side: TimelineSide;
+}
+
+export interface MatchTimeline {
+  home: TeamMatchStat;
+  away: TeamMatchStat;
+  // Echter Ballbesitz, falls die FIFA ihn liefert; sonst Naeherung aus Offensivaktionen.
+  possessionHome: number;
+  possessionAway: number;
+  possessionIsReal: boolean;
+  hasPossession: boolean;
+  events: TimelineEntry[];
+}
+
+interface FifaTimelineEvent {
+  IdTeam?: string | null;
+  MatchMinute?: string | null;
+  Type?: number | null;
+  TypeLocalized?: FifaLocalized[];
+  EventDescription?: FifaLocalized[];
+}
+
+interface FifaTimelineResponse {
+  Event?: FifaTimelineEvent[];
+}
+
+// FIFA-Timeline-Event-Typen (verifiziert): 12 = Torchance/Schuss, 16 = Eckstoss,
+// 18 = Foul, 15 = Abseits, 57 = Parade, 2 = Gelbe Karte, 5 = Auswechslung.
+const TIMELINE_TYPE = { shot: 12, corner: 16, foul: 18, offside: 15, save: 57, yellow: 2, substitution: 5 } as const;
+const emptyStat = (): TeamMatchStat => ({ shots: 0, corners: 0, fouls: 0, offsides: 0, saves: 0, yellow: 0, red: 0, substitutions: 0 });
+
 const localized = (entries?: FifaLocalized[]) => entries?.[0]?.Description ?? "";
 
 // "45'+2'" -> 45.2 fuer die Sortierung, Anzeige bleibt der Originalstring.
@@ -309,6 +362,72 @@ export const fifaApi = {
     const details: MatchDetails = { goals, home: toTeamLineup(home), away: toTeamLineup(away) };
     if (finished) storageService.set(cacheKey, details);
     return details;
+  },
+
+  async fetchMatchTimeline(stageId: string, matchId: string, homeFifaId: string, awayFifaId: string, finished = false): Promise<MatchTimeline> {
+    const cacheKey = `fifa-timeline-v1-${matchId}`;
+    if (finished) {
+      const cached = storageService.get<MatchTimeline | null>(cacheKey, null);
+      if (cached) return cached;
+    }
+
+    const url = `https://api.fifa.com/api/v3/timelines/${COMPETITION_ID}/${SEASON_ID}/${stageId}/${matchId}?language=de`;
+    const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!response.ok) throw new Error(`Spielverlauf konnte nicht geladen werden (HTTP ${response.status})`);
+    const data = (await response.json()) as FifaTimelineResponse;
+    const rawEvents = data.Event ?? [];
+
+    const home = emptyStat();
+    const away = emptyStat();
+    const sideOf = (idTeam: string | null | undefined): TimelineSide =>
+      idTeam === homeFifaId ? "home" : idTeam === awayFifaId ? "away" : "neutral";
+
+    const events: TimelineEntry[] = rawEvents.map((event, index) => {
+      const side = sideOf(event.IdTeam);
+      const label = localized(event.TypeLocalized);
+      const stat = side === "home" ? home : side === "away" ? away : null;
+      if (stat) {
+        if (event.Type === TIMELINE_TYPE.shot) stat.shots += 1;
+        else if (event.Type === TIMELINE_TYPE.corner) stat.corners += 1;
+        else if (event.Type === TIMELINE_TYPE.foul) stat.fouls += 1;
+        else if (event.Type === TIMELINE_TYPE.offside) stat.offsides += 1;
+        else if (event.Type === TIMELINE_TYPE.save) stat.saves += 1;
+        else if (event.Type === TIMELINE_TYPE.yellow) stat.yellow += 1;
+        else if (event.Type === TIMELINE_TYPE.substitution) stat.substitutions += 1;
+        // Rote Karte: Code variiert, daher robust ueber das Label erkennen.
+        else if (/rot/i.test(label) && /karte/i.test(label)) stat.red += 1;
+      }
+      const minute = event.MatchMinute ?? "";
+      return {
+        minute,
+        sortValue: goalSortValue(minute),
+        order: index,
+        type: event.Type ?? -1,
+        label,
+        description: localized(event.EventDescription),
+        side,
+      };
+    });
+
+    // Ballbesitz: echte FIFA-Werte sind bei der WM 2026 (Stand jetzt) leer ->
+    // Naeherung "Spielkontrolle" aus Offensivaktionen (Schuesse + Ecken).
+    const homeActions = home.shots + home.corners;
+    const awayActions = away.shots + away.corners;
+    const totalActions = homeActions + awayActions;
+    const hasPossession = totalActions > 0;
+    const possessionHome = hasPossession ? Math.round((homeActions / totalActions) * 100) : 50;
+
+    const timeline: MatchTimeline = {
+      home,
+      away,
+      possessionHome,
+      possessionAway: 100 - possessionHome,
+      possessionIsReal: false,
+      hasPossession,
+      events,
+    };
+    if (finished) storageService.set(cacheKey, timeline);
+    return timeline;
   },
 
   // Torschuetzenliste aus allen gespielten Spielen aggregieren.
