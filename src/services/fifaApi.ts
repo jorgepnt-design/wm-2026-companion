@@ -67,6 +67,14 @@ interface FifaLocalized {
 interface FifaGoal {
   IdPlayer?: string | null;
   IdTeam?: string | null;
+  IdAssistPlayer?: string | null;
+  Minute?: string | null;
+  Type?: number | null; // 2 = regulaeres Tor, 3 = Elfmeter, 4 = Eigentor
+}
+
+interface FifaBooking {
+  IdPlayer?: string | null;
+  Card?: number | null; // 1 = Gelb, 2 = Gelb-Rot (zweite Gelbe), 3 = Rot
   Minute?: string | null;
 }
 
@@ -84,6 +92,7 @@ interface FifaLiveTeam {
   Abbreviation?: string | null;
   Tactics?: string | null;
   Goals?: FifaGoal[];
+  Bookings?: FifaBooking[];
   Players?: FifaPlayer[];
   TeamName?: FifaLocalized[];
 }
@@ -96,14 +105,34 @@ interface FifaLiveMatch {
 export interface GoalEvent {
   minute: string;
   sortMinute: number;
+  idPlayer: string;
   playerName: string;
   teamCode: string;
+  isPenalty: boolean;
+  isOwnGoal: boolean;
+  idAssistPlayer?: string;
+  assistName?: string;
 }
+
+export interface ScorerRow {
+  rank: number;
+  idPlayer: string;
+  playerName: string;
+  teamId?: string;
+  teamCode: string;
+  goals: number;
+  penalties: number;
+  assists: number;
+}
+
+// "none" wird nie gerendert; erleichtert aber Live-Daten spaeter.
+export type CardType = "none" | "yellow" | "yellow-red" | "red";
 
 export interface LineupPlayer {
   shirtNumber: number;
   name: string;
   captain: boolean;
+  card: CardType;
 }
 
 export interface TeamMatchLineup {
@@ -128,10 +157,21 @@ const goalSortValue = (minute: string) => {
   return Number(parts[0] ?? 0) + Number(parts[1] ?? 0) / 10;
 };
 
-const toLineupPlayer = (player: FifaPlayer): LineupPlayer => ({
+// Karten eines Spielers aus seinen Verwarnungen ableiten.
+// Zwei Gelbe oder eine "Card 2" ergeben Gelb-Rot; "Card 3" ist die glatte Rote.
+const cardForPlayer = (bookings: FifaBooking[]): CardType => {
+  if (bookings.some((booking) => booking.Card === 3)) return "red";
+  const yellows = bookings.filter((booking) => booking.Card === 1).length;
+  if (bookings.some((booking) => booking.Card === 2) || yellows >= 2) return "yellow-red";
+  if (yellows === 1) return "yellow";
+  return "none";
+};
+
+const toLineupPlayer = (player: FifaPlayer, bookingsByPlayer: Map<string, FifaBooking[]>): LineupPlayer => ({
   shirtNumber: player.ShirtNumber ?? 0,
   name: localized(player.ShortName) || localized(player.PlayerName) || "Unbekannt",
   captain: player.Captain === true,
+  card: cardForPlayer(bookingsByPlayer.get(player.IdPlayer ?? "") ?? []),
 });
 
 // --- Offizielle Kader ---
@@ -163,13 +203,19 @@ const ageFromBirthDate = (birthDate: string | null | undefined): number | undefi
 const toTeamLineup = (team: FifaLiveTeam | null | undefined): TeamMatchLineup | undefined => {
   if (!team) return undefined;
   const players = team.Players ?? [];
+  const bookingsByPlayer = new Map<string, FifaBooking[]>();
+  for (const booking of team.Bookings ?? []) {
+    const id = booking.IdPlayer ?? "";
+    bookingsByPlayer.set(id, [...(bookingsByPlayer.get(id) ?? []), booking]);
+  }
   const byShirt = (a: LineupPlayer, b: LineupPlayer) => a.shirtNumber - b.shirtNumber;
+  const build = (status: number) => players.filter((player) => player.Status === status).map((player) => toLineupPlayer(player, bookingsByPlayer)).sort(byShirt);
   return {
     teamCode: team.Abbreviation ?? "",
     teamName: localized(team.TeamName),
     formation: team.Tactics ?? null,
-    starters: players.filter((player) => player.Status === 1).map(toLineupPlayer).sort(byShirt),
-    bench: players.filter((player) => player.Status === 2).map(toLineupPlayer).sort(byShirt),
+    starters: build(1),
+    bench: build(2),
   };
 };
 
@@ -208,7 +254,16 @@ export const fifaApi = {
       });
   },
 
-  async fetchMatchDetails(stageId: string, matchId: string): Promise<MatchDetails> {
+  async fetchMatchDetails(stageId: string, matchId: string, finished = false): Promise<MatchDetails> {
+    // Beendete Spiele aendern sich nie -> dauerhaft in localStorage cachen
+    // (auch von der Torschuetzenliste genutzt, damit nicht jedes Spiel doppelt geladen wird).
+    // v2: Eigentor-/Elfmeter-Logik korrigiert -> alte Cache-Eintraege nicht mehr verwenden.
+    const cacheKey = `fifa-details-v2-${matchId}`;
+    if (finished) {
+      const cached = storageService.get<MatchDetails | null>(cacheKey, null);
+      if (cached) return cached;
+    }
+
     const url = `https://api.fifa.com/api/v3/live/football/${COMPETITION_ID}/${SEASON_ID}/${stageId}/${matchId}?language=de`;
     const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
     if (!response.ok) throw new Error(`Spieldetails konnten nicht geladen werden (HTTP ${response.status})`);
@@ -216,28 +271,88 @@ export const fifaApi = {
 
     const home = data.HomeTeam;
     const away = data.AwayTeam;
-    // Eigentore werden dem gegnerischen Team gutgeschrieben -> Spielername in beiden Kadern suchen.
     const allPlayers = [...(home?.Players ?? []), ...(away?.Players ?? [])];
     const playerName = (idPlayer: string | null | undefined) => {
       const player = allPlayers.find((item) => item.IdPlayer === idPlayer);
       return player ? localized(player.ShortName) || localized(player.PlayerName) : "Unbekannt";
     };
-    const teamCode = (idTeam: string | null | undefined) =>
-      idTeam === home?.IdTeam ? home?.Abbreviation ?? "" : idTeam === away?.IdTeam ? away?.Abbreviation ?? "" : "";
 
-    const goals: GoalEvent[] = [...(home?.Goals ?? []), ...(away?.Goals ?? [])]
-      .map((goal) => {
+    // Massgeblich ist, in welchem Team-Array das Tor steht (so zaehlt die FIFA den Spielstand) –
+    // das ist die beguenstigte Mannschaft. Eigentor robust erkennen: der Torschuetze steht im
+    // gegnerischen Kader (FIFA-Tor-Typ 3 ist ebenfalls ein Eigentor). Eigentore werden in der
+    // Torschuetzenliste ueber isOwnGoal ausgeschlossen.
+    const idSet = (players: FifaPlayer[] | undefined) => new Set((players ?? []).map((player) => player.IdPlayer));
+    const homeIds = idSet(home?.Players);
+    const awayIds = idSet(away?.Players);
+    const mapGoals = (goalList: FifaGoal[] | undefined, teamCode: string, ownIds: Set<string | null | undefined>, oppIds: Set<string | null | undefined>): GoalEvent[] =>
+      (goalList ?? []).map((goal) => {
         const minute = goal.Minute ?? "";
+        const isOwnGoal = goal.Type === 3 || (oppIds.has(goal.IdPlayer) && !ownIds.has(goal.IdPlayer));
         return {
           minute,
           sortMinute: goalSortValue(minute),
+          idPlayer: goal.IdPlayer ?? "",
           playerName: playerName(goal.IdPlayer),
-          teamCode: teamCode(goal.IdTeam),
+          teamCode,
+          isPenalty: goal.Type === 4,
+          isOwnGoal,
+          idAssistPlayer: goal.IdAssistPlayer ?? undefined,
+          assistName: goal.IdAssistPlayer ? playerName(goal.IdAssistPlayer) : undefined,
         };
-      })
-      .sort((a, b) => a.sortMinute - b.sortMinute);
+      });
 
-    return { goals, home: toTeamLineup(home), away: toTeamLineup(away) };
+    const goals: GoalEvent[] = [
+      ...mapGoals(home?.Goals, home?.Abbreviation ?? "", homeIds, awayIds),
+      ...mapGoals(away?.Goals, away?.Abbreviation ?? "", awayIds, homeIds),
+    ].sort((a, b) => a.sortMinute - b.sortMinute);
+
+    const details: MatchDetails = { goals, home: toTeamLineup(home), away: toTeamLineup(away) };
+    if (finished) storageService.set(cacheKey, details);
+    return details;
+  },
+
+  // Torschuetzenliste aus allen gespielten Spielen aggregieren.
+  // Beendete Spiele liegen im localStorage-Cache, daher ist der zweite Aufruf praktisch sofort.
+  async fetchTopScorers(matches: Array<{ stageId: string; matchId: string; finished: boolean }>): Promise<ScorerRow[]> {
+    const teamIdByCode = new Map(teams.map((team) => [team.fifaCode, team.id]));
+    const scorers = new Map<string, ScorerRow>();
+    const ensure = (idPlayer: string, name: string, teamCode: string): ScorerRow => {
+      const existing = scorers.get(idPlayer);
+      if (existing) return existing;
+      const created: ScorerRow = { rank: 0, idPlayer, playerName: name, teamCode, teamId: teamIdByCode.get(teamCode), goals: 0, penalties: 0, assists: 0 };
+      scorers.set(idPlayer, created);
+      return created;
+    };
+
+    // Begrenzte Parallelitaet, um die FIFA-API nicht zu ueberlasten.
+    const queue = [...matches];
+    const worker = async () => {
+      while (queue.length > 0) {
+        const next = queue.shift();
+        if (!next) break;
+        try {
+          const details = await this.fetchMatchDetails(next.stageId, next.matchId, next.finished);
+          for (const goal of details.goals) {
+            if (goal.isOwnGoal || !goal.idPlayer) continue;
+            const row = ensure(goal.idPlayer, goal.playerName, goal.teamCode);
+            row.goals += 1;
+            if (goal.isPenalty) row.penalties += 1;
+            if (goal.idAssistPlayer) {
+              const assister = ensure(goal.idAssistPlayer, goal.assistName ?? "Unbekannt", goal.teamCode);
+              assister.assists += 1;
+            }
+          }
+        } catch {
+          // Einzelnes Spiel ueberspringen, Rest der Liste trotzdem auswerten.
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(5, matches.length) }, worker));
+
+    return [...scorers.values()]
+      .filter((row) => row.goals > 0)
+      .sort((a, b) => b.goals - a.goals || b.penalties - a.penalties || b.assists - a.assists || a.playerName.localeCompare(b.playerName, "de"))
+      .map((row, index) => ({ ...row, rank: index + 1 }));
   },
 
   async fetchTeamSquad(team: Team): Promise<TeamSquad> {

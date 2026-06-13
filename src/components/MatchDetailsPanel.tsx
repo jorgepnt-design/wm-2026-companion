@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, Loader2, Users } from "lucide-react";
 import { useState } from "react";
 import { fifaApi, type MatchDetails, type TeamMatchLineup } from "../services/fifaApi";
 import type { Match } from "../types";
+import { CardBadge } from "./CardBadge";
 
 interface Props {
   match: Match;
@@ -27,10 +28,11 @@ function LineupColumn({ lineup }: { lineup: TeamMatchLineup }) {
       </p>
       <ul className="mt-1.5 space-y-0.5 text-sm text-white/70">
         {lineup.starters.map((player) => (
-          <li key={`${player.shirtNumber}-${player.name}`} className="truncate">
-            <span className="inline-block w-6 text-right font-bold tabular-nums text-white/45">{player.shirtNumber}</span>{" "}
-            {player.name}
-            {player.captain && <span className="ml-1 text-xs font-bold text-gold">(C)</span>}
+          <li key={`${player.shirtNumber}-${player.name}`} className="flex items-center gap-1.5">
+            <span className="inline-block w-6 shrink-0 text-right font-bold tabular-nums text-white/45">{player.shirtNumber}</span>
+            <span className="truncate">{player.name}</span>
+            {player.captain && <span className="text-xs font-bold text-gold">(C)</span>}
+            <CardBadge card={player.card} className="ml-auto shrink-0" />
           </li>
         ))}
       </ul>
@@ -58,7 +60,7 @@ export function MatchDetailsPanel({ match }: Props) {
     setIsLoading(true);
     setError(null);
     try {
-      const fetched = await fifaApi.fetchMatchDetails(match.fifaStageId as string, match.fifaMatchId as string);
+      const fetched = await fifaApi.fetchMatchDetails(match.fifaStageId as string, match.fifaMatchId as string, match.status === "finished");
       detailsCache.set(match.id, { details: fetched, fetchedAt: Date.now() });
       setDetails(fetched);
     } catch (caught) {
@@ -106,6 +108,9 @@ export function MatchDetailsPanel({ match }: Props) {
                           <span className="inline-block w-12 font-bold tabular-nums text-gold">{goal.minute}</span>
                           ⚽ {goal.playerName}
                           {goal.teamCode && <span className="ml-1.5 text-xs font-bold text-white/45">{goal.teamCode}</span>}
+                          {goal.isPenalty && <span className="ml-1.5 text-xs text-white/50">(Elfmeter)</span>}
+                          {goal.isOwnGoal && <span className="ml-1.5 text-xs text-white/50">(Eigentor)</span>}
+                          {goal.assistName && <span className="ml-1.5 text-xs text-white/45">Vorlage: {goal.assistName}</span>}
                         </li>
                       ))}
                     </ul>

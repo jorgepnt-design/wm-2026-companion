@@ -1,13 +1,14 @@
-import { BarChart3, Bell, CalendarDays, Home, Settings, Shield } from "lucide-react";
+import { BarChart3, Bell, CalendarDays, Goal, Home, Settings, Shield } from "lucide-react";
 
-export type PageId = "dashboard" | "teams" | "schedule" | "groups" | "settings";
+export type PageId = "dashboard" | "teams" | "schedule" | "groups" | "scorers" | "settings";
 
 const items = [
-  { id: "dashboard", label: "Dashboard", icon: Home },
-  { id: "teams", label: "Teams", icon: Shield },
-  { id: "schedule", label: "Spielplan", icon: CalendarDays },
-  { id: "groups", label: "Gruppen", icon: BarChart3 },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "dashboard", label: "Dashboard", short: "Start", icon: Home },
+  { id: "teams", label: "Teams", short: "Teams", icon: Shield },
+  { id: "schedule", label: "Spielplan", short: "Spiele", icon: CalendarDays },
+  { id: "groups", label: "Gruppen", short: "Gruppen", icon: BarChart3 },
+  { id: "scorers", label: "Torschützen", short: "Tore", icon: Goal },
+  { id: "settings", label: "Settings", short: "Mehr", icon: Settings },
 ] as const;
 
 interface Props {
@@ -19,19 +20,19 @@ export function Navigation({ current, onNavigate }: Props) {
   return (
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-night/95 backdrop-blur md:hidden safe-bottom">
-        <div className="grid grid-cols-5 gap-1 px-2 pt-2">
-          {items.map(({ id, label, icon: Icon }) => (
+        <div className="grid grid-cols-6 gap-0.5 px-1 pt-2">
+          {items.map(({ id, short, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
               onClick={() => onNavigate(id)}
-              className={`flex min-h-14 flex-col items-center justify-center rounded-md text-[11px] ${
+              className={`flex min-h-14 flex-col items-center justify-center rounded-md text-[10px] ${
                 current === id ? "bg-gold text-night" : "text-white/70"
               }`}
               title={label}
             >
-              <Icon size={19} aria-hidden />
-              <span className="mt-1 truncate">{label}</span>
+              <Icon size={18} aria-hidden />
+              <span className="mt-1 truncate">{short}</span>
             </button>
           ))}
         </div>

@@ -8,6 +8,7 @@ import { useTeams } from "./hooks/useTeams";
 import { useUserSettings } from "./hooks/useUserSettings";
 import { Dashboard } from "./pages/Dashboard";
 import { GroupsPage } from "./pages/GroupsPage";
+import { ScorersPage } from "./pages/ScorersPage";
 import { SchedulePage } from "./pages/SchedulePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TeamsPage } from "./pages/TeamsPage";
@@ -57,6 +58,7 @@ export default function App() {
         />
       )}
       {page === "groups" && <GroupsPage groups={groups} teams={teams} favoriteIds={favoriteIds} matches={matches} />}
+      {page === "scorers" && <ScorersPage matches={matches} favoriteIds={favoriteIds} />}
       {page === "settings" && <SettingsPage settings={settings} onChange={setSettings} calendarMatches={favoriteMatches} />}
     </Layout>
   );
