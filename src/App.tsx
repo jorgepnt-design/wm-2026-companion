@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Layout } from "./components/Layout";
 import { LiveDataAutoRefresh } from "./components/LiveDataAutoRefresh";
 import type { PageId } from "./components/Navigation";
+import { Toast } from "./components/Toast";
+import { GoalAlertsProvider } from "./context/GoalAlertsContext";
 import { useFavorites } from "./hooks/useFavorites";
 import { useMatches } from "./hooks/useMatches";
 import { useTeams } from "./hooks/useTeams";
@@ -21,7 +23,8 @@ export default function App() {
   const { matches, filteredMatches, favoriteMatches, nextFavoriteMatch, filters, setFilters } = useMatches(favoriteTeams);
 
   return (
-    <Layout page={page} onNavigate={setPage}>
+    <GoalAlertsProvider>
+      <Layout page={page} onNavigate={setPage}>
       <LiveDataAutoRefresh />
       {page === "dashboard" && (
         <Dashboard
@@ -60,6 +63,8 @@ export default function App() {
       {page === "groups" && <GroupsPage groups={groups} teams={teams} favoriteIds={favoriteIds} matches={matches} />}
       {page === "scorers" && <ScorersPage matches={matches} favoriteIds={favoriteIds} />}
       {page === "settings" && <SettingsPage settings={settings} onChange={setSettings} calendarMatches={favoriteMatches} />}
-    </Layout>
+      </Layout>
+      <Toast />
+    </GoalAlertsProvider>
   );
 }

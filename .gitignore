@@ -6,3 +6,5 @@ dist/
 *.log
 *.tsbuildinfo
 .claude/
+.wrangler/
+push-backend/node_modules/

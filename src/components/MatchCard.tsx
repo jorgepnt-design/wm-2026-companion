@@ -1,5 +1,6 @@
 import { MapPin, Star } from "lucide-react";
 import { FlagIcon } from "./FlagIcon";
+import { GoalAlertBell } from "./GoalAlertBell";
 import { MatchDetailsPanel } from "./MatchDetailsPanel";
 import { MatchStatsPanel } from "./MatchStatsPanel";
 import { matchService } from "../services/matchService";
@@ -87,11 +88,14 @@ export function MatchCard({ match, isFavorite, timezone, children }: Props) {
         <span className="flex items-center gap-1">
           <MapPin size={16} aria-hidden /> {match.stadium}, {match.city}
         </span>
-        {isFavorite && (
-          <span className="flex items-center gap-1 text-gold">
-            <Star size={16} fill="currentColor" aria-hidden /> Meine Teams
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isFavorite && (
+            <span className="flex items-center gap-1 text-gold">
+              <Star size={16} fill="currentColor" aria-hidden /> Meine Teams
+            </span>
+          )}
+          <GoalAlertBell match={match} />
+        </div>
       </div>
       <MatchDetailsPanel match={match} />
       <MatchStatsPanel match={match} />

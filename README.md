@@ -15,6 +15,7 @@ Moderne, responsive React-PWA für einen personalisierten Spielplan zur Fußball
 - Dashboard-Bereiche „Live jetzt“ und „Heute“ mit Status-Badges (Live mit Spielminute, Beendet, Geplant)
 - Gruppentabellen werden automatisch aus den Ergebnissen berechnet (Punkte, Tore, Differenz, Platzierung)
 - Live-Datenstatus mit letzter Aktualisierung, Quelle und Fehleranzeige
+- Tor-Push-Benachrichtigungen pro Spiel (Glocke) – optional, via Cloudflare-Backend (`push-backend/`)
 - Statistikbereich mit Favoriten, Lieblingsspielen und Gruppenspielen
 - `.ics`-Export für Portugal, alle Favoriten oder alle Spiele
 - PWA mit Manifest, Service Worker, Icons und Offline-Fallback
