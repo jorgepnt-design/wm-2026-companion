@@ -116,6 +116,34 @@ async function handleRequest(request, env) {
     return json(pending);
   }
 
+  // Test: schickt allen angemeldeten Geraeten sofort eine Test-Push (zum Pruefen der Zustellung).
+  if (url.pathname === "/test") {
+    let cursor;
+    let pushed = 0;
+    let subscribers = 0;
+    do {
+      const list = await env.PUSH.list({ prefix: "sub:", cursor });
+      for (const key of list.keys) {
+        const hash = key.name.slice(4);
+        const entry = await env.PUSH.get(key.name, "json");
+        if (!entry?.subscription) continue;
+        subscribers += 1;
+        const queue = (await env.PUSH.get(`pending:${hash}`, "json")) || [];
+        queue.push({ title: "🔔 Test ⚽", body: "Push funktioniert! Du wirst bei Toren benachrichtigt.", url: "/wm-2026-companion/" });
+        await env.PUSH.put(`pending:${hash}`, JSON.stringify(queue), { expirationTtl: 60 * 30 });
+        try {
+          const r = await sendWake(env, entry.subscription);
+          if (r.status === 404 || r.status === 410) await delSub(env, hash);
+          else pushed += 1;
+        } catch {
+          // ignorieren
+        }
+      }
+      cursor = list.list_complete ? undefined : list.cursor;
+    } while (cursor);
+    return json({ ok: true, subscribers, pushed });
+  }
+
   if (url.pathname === "/" || url.pathname === "/status") return json({ ok: true, service: "wm-goal-push" });
   return json({ error: "not found" }, 404);
 }
