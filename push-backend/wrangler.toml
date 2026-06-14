@@ -11,7 +11,7 @@ crons = ["* * * * *"]
 # Danach die ausgegebene id hier eintragen:
 [[kv_namespaces]]
 binding = "PUSH"
-id = "HIER_KV_NAMESPACE_ID_EINTRAGEN"
+id = "a82b204f0b624dd6b33700181450db35"
 
 # Secrets NICHT hier eintragen, sondern setzen mit:
 #   npx wrangler secret put VAPID_PUBLIC_KEY

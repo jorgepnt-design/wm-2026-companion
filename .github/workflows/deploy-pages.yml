@@ -32,6 +32,10 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          # Tor-Push: oeffentliche Werte (kein Geheimnis) – damit der GitHub-Pages-Build sie kennt.
+          VITE_PUSH_BACKEND_URL: https://wm-goal-push.jorge-ligen.workers.dev
+          VITE_VAPID_PUBLIC_KEY: BJYHA0SMOClWlci-tJ8mzyQIvdFYNYAnBnVJBzD99pYAXJJ0m8ERjGxqOg2KsPFvSurmaoj35lwMXSLizUmc-_M
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
