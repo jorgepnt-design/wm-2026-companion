@@ -148,6 +148,34 @@ async function handleRequest(request, env) {
   return json({ error: "not found" }, 404);
 }
 
+// --- Spieldetail: Torschuetze ermitteln ---
+const localizedDesc = (arr) => (arr && arr[0] && arr[0].Description) || "";
+const goalMinuteValue = (m) => {
+  const p = (m || "").match(/\d+/g) || [];
+  return Number(p[0] || 0) + Number(p[1] || 0) / 10;
+};
+async function fetchMatchDetail(stageId, matchId) {
+  const url = `https://api.fifa.com/api/v3/live/football/17/285023/${stageId}/${matchId}?language=de`;
+  const res = await fetch(url, { headers: { Accept: "application/json" }, cf: { cacheTtl: 0 } });
+  if (!res.ok) return null;
+  return res.json();
+}
+// Letztes Tor einer Seite + Torschuetze. Eigentor: Schuetze steht im Gegner-Kader (FIFA-Typ 3).
+function latestGoal(detail, side) {
+  const team = side === "home" ? detail.HomeTeam : detail.AwayTeam;
+  const other = side === "home" ? detail.AwayTeam : detail.HomeTeam;
+  const goals = (team && team.Goals) || [];
+  if (goals.length === 0) return null;
+  const g = goals.slice().sort((a, b) => goalMinuteValue(b.Minute) - goalMinuteValue(a.Minute))[0];
+  const own = ((team && team.Players) || []).find((p) => p.IdPlayer === g.IdPlayer);
+  const opp = ((other && other.Players) || []).find((p) => p.IdPlayer === g.IdPlayer);
+  const player = own || opp;
+  const name = player ? localizedDesc(player.ShortName) || localizedDesc(player.PlayerName) : "";
+  const isOwnGoal = g.Type === 3 || (!!opp && !own);
+  const isPenalty = g.Type === 4;
+  return { name, minute: g.Minute || "", isOwnGoal, isPenalty };
+}
+
 // --- Cron: Tore erkennen & Push senden ---
 async function checkGoals(env) {
   // 1) Alle Abos sammeln, beobachtete Spiele -> Abonnenten-Map.
@@ -196,13 +224,36 @@ async function checkGoals(env) {
     const [ph, pa] = prev;
     if (h <= ph && a <= pa) continue;
 
-    const scorer = h > ph ? home : away;
-    const message = { title: `⚽ Tor: ${home} ${h}:${a} ${away}`, body: `${scorer} trifft!`, tag: matchId, url: "/wm-2026-companion/" };
+    // Spieldetail laden, um den Torschuetzen zu nennen (nur wenn ein Tor fiel).
+    let detail = null;
+    if (item.IdStage && item.IdMatch) {
+      try {
+        detail = await fetchMatchDetail(item.IdStage, item.IdMatch);
+      } catch {
+        // ohne Detail wird nur das Team genannt
+      }
+    }
+
+    const sides = [];
+    if (h > ph) sides.push({ side: "home", team: home });
+    if (a > pa) sides.push({ side: "away", team: away });
+
+    const messages = sides.map(({ side, team }) => {
+      const g = detail ? latestGoal(detail, side) : null;
+      let body;
+      if (g && g.name) {
+        const min = g.minute ? ` (${g.minute})` : "";
+        body = g.isOwnGoal ? `Eigentor: ${g.name}${min}` : `${g.name} trifft!${min}${g.isPenalty ? " – Elfmeter" : ""}`;
+      } else {
+        body = `${team} trifft!`;
+      }
+      return { title: `⚽ Tor: ${home} ${h}:${a} ${away}`, body, tag: matchId, url: "/wm-2026-companion/" };
+    });
 
     for (const { hash } of subs) {
       const key = `pending:${hash}`;
       const queue = (await env.PUSH.get(key, "json")) || [];
-      queue.push(message);
+      for (const message of messages) queue.push(message);
       await env.PUSH.put(key, JSON.stringify(queue), { expirationTtl: 60 * 30 });
       wakes.set(hash, subs.find((s) => s.hash === hash).subscription);
     }
