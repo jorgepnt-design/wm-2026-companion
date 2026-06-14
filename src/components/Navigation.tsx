@@ -19,7 +19,7 @@ interface Props {
 export function Navigation({ current, onNavigate }: Props) {
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-night/95 backdrop-blur md:hidden safe-bottom">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-night md:hidden safe-bottom">
         <div className="grid grid-cols-6 gap-0.5 px-1 pt-2">
           {items.map(({ id, short, label, icon: Icon }) => (
             <button
