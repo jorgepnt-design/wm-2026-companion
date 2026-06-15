@@ -217,12 +217,15 @@ async function checkGoals(env) {
 
     const prevRaw = await env.PUSH.get(`score:${matchId}`);
     const prev = prevRaw ? prevRaw.split(":").map(Number) : null;
-    await env.PUSH.put(`score:${matchId}`, `${h}:${a}`, { expirationTtl: 60 * 60 * 6 });
 
-    // Beim ersten Sehen nur Basislinie setzen (keine Falsch-Tore).
-    if (!prev) continue;
+    // Basislinie beim ersten Sehen setzen (keine Falsch-Tore) und nur bei Änderung schreiben.
+    if (!prev) {
+      await env.PUSH.put(`score:${matchId}`, `${h}:${a}`, { expirationTtl: 60 * 60 * 6 });
+      continue;
+    }
     const [ph, pa] = prev;
     if (h <= ph && a <= pa) continue;
+    await env.PUSH.put(`score:${matchId}`, `${h}:${a}`, { expirationTtl: 60 * 60 * 6 });
 
     // Spieldetail laden, um den Torschuetzen zu nennen (nur wenn ein Tor fiel).
     let detail = null;
