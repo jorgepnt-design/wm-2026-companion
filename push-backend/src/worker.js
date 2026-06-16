@@ -10,6 +10,7 @@
 // Secrets:  VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY (base64url), VAPID_SUBJECT (mailto:...).
 
 const FIFA_URL = "https://api.fifa.com/api/v3/calendar/matches?idCompetition=17&idSeason=285023&language=de&count=200";
+const WORKER_VERSION = "kv-index-v2";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -160,7 +161,7 @@ async function handleRequest(request, env) {
     }
     return json({ ok: true, subscribers, pushed });
   }
-  if (url.pathname === "/" || url.pathname === "/status") return json({ ok: true, service: "wm-goal-push" });
+  if (url.pathname === "/" || url.pathname === "/status") return json({ ok: true, service: "wm-goal-push", version: WORKER_VERSION });
   return json({ error: "not found" }, 404);
 }
 
