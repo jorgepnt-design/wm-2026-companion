@@ -1,12 +1,13 @@
-name = "wm-goal-push"
+﻿name = "wm-goal-push"
 main = "src/worker.js"
 compatibility_date = "2024-11-01"
 
-# Cron: jede Minute Tore prüfen (kleinstes Cloudflare-Intervall).
+# Cron: jede Minute Tore pruefen. Der Worker nutzt dafuer sub:index und kein KV.list(),
+# damit das kostenlose Cloudflare-KV-List-Limit nicht taeglich erreicht wird.
 [triggers]
 crons = ["* * * * *"]
 
-# KV-Namespace für Abos, ausstehende Meldungen und letzte Spielstände.
+# KV-Namespace fÃ¼r Abos, ausstehende Meldungen und letzte SpielstÃ¤nde.
 # Anlegen:  npx wrangler kv namespace create PUSH
 # Danach die ausgegebene id hier eintragen:
 [[kv_namespaces]]

@@ -66,8 +66,13 @@ Glocke aktivieren. Beim nächsten Tor (innerhalb ~1 Min) kommt die Push.
 - Beim ersten Sehen eines Spiels wird nur die Basislinie gesetzt (keine Falsch-Tore).
 
 ## Kosten / Limits
-Cloudflare Free-Tier reicht locker: 1 Cron/Minute + wenige KV-Operationen. Es werden keine
-sensiblen Daten gespeichert (nur anonyme Push-Endpunkte).
+Der Worker vermeidet `KV.list()` im normalen Cron-Lauf. Abos werden zusätzlich in `sub:index`
+gespeichert, damit der Minutentakt nicht das kostenlose Cloudflare-Workers-KV-List-Limit auslöst.
+Es werden keine sensiblen Daten gespeichert (nur anonyme Push-Endpunkte).
+
+Wenn alte Abos vor dieser Index-Version gespeichert wurden, müssen die Benachrichtigungen in der
+App einmal deaktiviert und wieder aktiviert werden. Dadurch wird das Abo automatisch in den neuen
+Index übernommen.
 
 ## Hinweis
 Der Push-Versand (VAPID + Web-Push) ist sorgfältig implementiert, konnte hier aber nicht

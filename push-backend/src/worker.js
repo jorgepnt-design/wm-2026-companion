@@ -73,9 +73,26 @@ const sendWake = async (env, subscription) => {
 };
 
 // --- KV Zugriff ---
+const SUB_INDEX_KEY = "sub:index";
 const getSub = (env, hash) => env.PUSH.get(`sub:${hash}`, "json");
 const putSub = (env, hash, value) => env.PUSH.put(`sub:${hash}`, JSON.stringify(value));
-const delSub = (env, hash) => Promise.all([env.PUSH.delete(`sub:${hash}`), env.PUSH.delete(`pending:${hash}`)]);
+const getSubIndex = async (env) => {
+  const value = await env.PUSH.get(SUB_INDEX_KEY, "json");
+  return Array.isArray(value) ? value.filter((hash) => typeof hash === "string") : [];
+};
+const putSubIndex = (env, hashes) => env.PUSH.put(SUB_INDEX_KEY, JSON.stringify([...new Set(hashes)]));
+const addSubToIndex = async (env, hash) => {
+  const hashes = await getSubIndex(env);
+  if (!hashes.includes(hash)) await putSubIndex(env, [...hashes, hash]);
+};
+const removeSubFromIndex = async (env, hash) => {
+  const hashes = await getSubIndex(env);
+  if (hashes.includes(hash)) await putSubIndex(env, hashes.filter((item) => item !== hash));
+};
+const delSub = async (env, hash) => {
+  await Promise.all([env.PUSH.delete(`sub:${hash}`), env.PUSH.delete(`pending:${hash}`)]);
+  await removeSubFromIndex(env, hash);
+};
 
 // --- HTTP-Endpunkte ---
 async function handleRequest(request, env) {
@@ -88,6 +105,7 @@ async function handleRequest(request, env) {
     const hash = await hashEndpoint(subscription.endpoint);
     const existing = (await getSub(env, hash)) || {};
     await putSub(env, hash, { subscription, matchIds: existing.matchIds || [], updatedAt: Date.now() });
+    await addSubToIndex(env, hash);
     return json({ ok: true });
   }
 
@@ -98,6 +116,7 @@ async function handleRequest(request, env) {
     const existing = await getSub(env, hash);
     if (!existing) return json({ error: "unbekanntes Abo" }, 404);
     await putSub(env, hash, { ...existing, matchIds: Array.isArray(matchIds) ? matchIds : [], updatedAt: Date.now() });
+    await addSubToIndex(env, hash);
     return json({ ok: true });
   }
 
@@ -118,32 +137,29 @@ async function handleRequest(request, env) {
 
   // Test: schickt allen angemeldeten Geraeten sofort eine Test-Push (zum Pruefen der Zustellung).
   if (url.pathname === "/test") {
-    let cursor;
     let pushed = 0;
     let subscribers = 0;
-    do {
-      const list = await env.PUSH.list({ prefix: "sub:", cursor });
-      for (const key of list.keys) {
-        const hash = key.name.slice(4);
-        const entry = await env.PUSH.get(key.name, "json");
-        if (!entry?.subscription) continue;
-        subscribers += 1;
-        const queue = (await env.PUSH.get(`pending:${hash}`, "json")) || [];
-        queue.push({ title: "🔔 Test ⚽", body: "Push funktioniert! Du wirst bei Toren benachrichtigt.", url: "/wm-2026-companion/" });
-        await env.PUSH.put(`pending:${hash}`, JSON.stringify(queue), { expirationTtl: 60 * 30 });
-        try {
-          const r = await sendWake(env, entry.subscription);
-          if (r.status === 404 || r.status === 410) await delSub(env, hash);
-          else pushed += 1;
-        } catch {
-          // ignorieren
-        }
+    const hashes = await getSubIndex(env);
+    for (const hash of hashes) {
+      const entry = await getSub(env, hash);
+      if (!entry?.subscription) {
+        await removeSubFromIndex(env, hash);
+        continue;
       }
-      cursor = list.list_complete ? undefined : list.cursor;
-    } while (cursor);
+      subscribers += 1;
+      const queue = (await env.PUSH.get(`pending:${hash}`, "json")) || [];
+      queue.push({ title: "Test Push", body: "Push funktioniert! Du wirst bei Toren benachrichtigt.", url: "/wm-2026-companion/" });
+      await env.PUSH.put(`pending:${hash}`, JSON.stringify(queue), { expirationTtl: 60 * 30 });
+      try {
+        const r = await sendWake(env, entry.subscription);
+        if (r.status === 404 || r.status === 410) await delSub(env, hash);
+        else pushed += 1;
+      } catch {
+        // ignorieren
+      }
+    }
     return json({ ok: true, subscribers, pushed });
   }
-
   if (url.pathname === "/" || url.pathname === "/status") return json({ ok: true, service: "wm-goal-push" });
   return json({ error: "not found" }, 404);
 }
@@ -180,24 +196,21 @@ function latestGoal(detail, side) {
 async function checkGoals(env) {
   // 1) Alle Abos sammeln, beobachtete Spiele -> Abonnenten-Map.
   const matchSubs = new Map(); // matchId -> [{hash, subscription}]
-  let cursor;
-  do {
-    const list = await env.PUSH.list({ prefix: "sub:", cursor });
-    for (const key of list.keys) {
-      const hash = key.name.slice(4);
-      const entry = await env.PUSH.get(key.name, "json");
-      if (!entry?.subscription) continue;
-      for (const matchId of entry.matchIds || []) {
-        if (!matchSubs.has(matchId)) matchSubs.set(matchId, []);
-        matchSubs.get(matchId).push({ hash, subscription: entry.subscription });
-      }
+  const hashes = await getSubIndex(env);
+  for (const hash of hashes) {
+    const entry = await getSub(env, hash);
+    if (!entry?.subscription) {
+      await removeSubFromIndex(env, hash);
+      continue;
     }
-    cursor = list.list_complete ? undefined : list.cursor;
-  } while (cursor);
-
+    for (const matchId of entry.matchIds || []) {
+      if (!matchSubs.has(matchId)) matchSubs.set(matchId, []);
+      matchSubs.get(matchId).push({ hash, subscription: entry.subscription });
+    }
+  }
   if (matchSubs.size === 0) return;
 
-  // 2) Aktuelle FIFA-Stände holen.
+  // 2) Aktuelle FIFA-Staende holen.
   const res = await fetch(FIFA_URL, { headers: { Accept: "application/json" }, cf: { cacheTtl: 0 } });
   if (!res.ok) return;
   const data = await res.json();
@@ -243,11 +256,11 @@ async function checkGoals(env) {
       let body;
       if (g && g.name) {
         const min = g.minute ? ` (${g.minute})` : "";
-        body = g.isOwnGoal ? `Eigentor: ${g.name}${min}` : `${g.name} trifft!${min}${g.isPenalty ? " – Elfmeter" : ""}`;
+        body = g.isOwnGoal ? `Eigentor: ${g.name}${min}` : `${g.name} trifft!${min}${g.isPenalty ? " - Elfmeter" : ""}`;
       } else {
         body = `${team} trifft!`;
       }
-      return { title: `⚽ Tor: ${home} ${h}:${a} ${away}`, body, tag: matchId, url: "/wm-2026-companion/" };
+      return { title: `Tor: ${home} ${h}:${a} ${away}`, body, tag: matchId, url: "/wm-2026-companion/" };
     });
 
     for (const { hash } of subs) {
@@ -274,3 +287,4 @@ export default {
   fetch: handleRequest,
   scheduled: (_event, env, ctx) => ctx.waitUntil(checkGoals(env)),
 };
+
