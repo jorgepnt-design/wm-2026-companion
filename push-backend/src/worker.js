@@ -73,9 +73,12 @@ const sendWake = async (env, subscription) => {
 };
 
 // --- KV Zugriff ---
-const getSub = (env, hash) => env.PUSH.get(`sub:${hash}`, "json");
-const putSub = (env, hash, value) => env.PUSH.put(`sub:${hash}`, JSON.stringify(value));
-const delSub = (env, hash) => Promise.all([env.PUSH.delete(`sub:${hash}`), env.PUSH.delete(`pending:${hash}`)]);
+// Alle Abos in EINEM Key (statt einzelner sub:<hash> Keys + list() pro Cron-Lauf).
+// list() zaehlt auf das knappe Free-Tier-Limit (1000/Tag) und lief vorher JEDE Minute –
+// das hat das Limit unabhaengig von den put-Aufrufen ausgeschoepft.
+const INDEX_KEY = "subs-index";
+const getIndex = async (env) => (await env.PUSH.get(INDEX_KEY, "json")) || {};
+const putIndex = (env, index) => env.PUSH.put(INDEX_KEY, JSON.stringify(index));
 
 // --- HTTP-Endpunkte ---
 async function handleRequest(request, env) {
@@ -86,8 +89,10 @@ async function handleRequest(request, env) {
     const { subscription } = await request.json();
     if (!subscription?.endpoint) return json({ error: "subscription fehlt" }, 400);
     const hash = await hashEndpoint(subscription.endpoint);
-    const existing = (await getSub(env, hash)) || {};
-    await putSub(env, hash, { subscription, matchIds: existing.matchIds || [], updatedAt: Date.now() });
+    const index = await getIndex(env);
+    const existing = index[hash] || {};
+    index[hash] = { subscription, matchIds: existing.matchIds || [], updatedAt: Date.now() };
+    await putIndex(env, index);
     return json({ ok: true });
   }
 
@@ -95,15 +100,22 @@ async function handleRequest(request, env) {
     const { endpoint, matchIds } = await request.json();
     if (!endpoint) return json({ error: "endpoint fehlt" }, 400);
     const hash = await hashEndpoint(endpoint);
-    const existing = await getSub(env, hash);
-    if (!existing) return json({ error: "unbekanntes Abo" }, 404);
-    await putSub(env, hash, { ...existing, matchIds: Array.isArray(matchIds) ? matchIds : [], updatedAt: Date.now() });
+    const index = await getIndex(env);
+    if (!index[hash]) return json({ error: "unbekanntes Abo" }, 404);
+    index[hash] = { ...index[hash], matchIds: Array.isArray(matchIds) ? matchIds : [], updatedAt: Date.now() };
+    await putIndex(env, index);
     return json({ ok: true });
   }
 
   if (request.method === "POST" && url.pathname === "/unsubscribe") {
     const { endpoint } = await request.json();
-    if (endpoint) await delSub(env, await hashEndpoint(endpoint));
+    if (endpoint) {
+      const hash = await hashEndpoint(endpoint);
+      const index = await getIndex(env);
+      delete index[hash];
+      await putIndex(env, index);
+      await env.PUSH.delete(`pending:${hash}`);
+    }
     return json({ ok: true });
   }
 
@@ -118,29 +130,28 @@ async function handleRequest(request, env) {
 
   // Test: schickt allen angemeldeten Geraeten sofort eine Test-Push (zum Pruefen der Zustellung).
   if (url.pathname === "/test") {
-    let cursor;
+    const index = await getIndex(env);
     let pushed = 0;
     let subscribers = 0;
-    do {
-      const list = await env.PUSH.list({ prefix: "sub:", cursor });
-      for (const key of list.keys) {
-        const hash = key.name.slice(4);
-        const entry = await env.PUSH.get(key.name, "json");
-        if (!entry?.subscription) continue;
-        subscribers += 1;
-        const queue = (await env.PUSH.get(`pending:${hash}`, "json")) || [];
-        queue.push({ title: "🔔 Test ⚽", body: "Push funktioniert! Du wirst bei Toren benachrichtigt.", url: "/wm-2026-companion/" });
-        await env.PUSH.put(`pending:${hash}`, JSON.stringify(queue), { expirationTtl: 60 * 30 });
-        try {
-          const r = await sendWake(env, entry.subscription);
-          if (r.status === 404 || r.status === 410) await delSub(env, hash);
-          else pushed += 1;
-        } catch {
-          // ignorieren
-        }
+    let changed = false;
+    for (const [hash, entry] of Object.entries(index)) {
+      if (!entry?.subscription) continue;
+      subscribers += 1;
+      const queue = (await env.PUSH.get(`pending:${hash}`, "json")) || [];
+      queue.push({ title: "🔔 Test ⚽", body: "Push funktioniert! Du wirst bei Toren benachrichtigt.", url: "/wm-2026-companion/" });
+      await env.PUSH.put(`pending:${hash}`, JSON.stringify(queue), { expirationTtl: 60 * 30 });
+      try {
+        const r = await sendWake(env, entry.subscription);
+        if (r.status === 404 || r.status === 410) {
+          delete index[hash];
+          await env.PUSH.delete(`pending:${hash}`);
+          changed = true;
+        } else pushed += 1;
+      } catch {
+        // ignorieren
       }
-      cursor = list.list_complete ? undefined : list.cursor;
-    } while (cursor);
+    }
+    if (changed) await putIndex(env, index);
     return json({ ok: true, subscribers, pushed });
   }
 
@@ -178,22 +189,16 @@ function latestGoal(detail, side) {
 
 // --- Cron: Tore erkennen & Push senden ---
 async function checkGoals(env) {
-  // 1) Alle Abos sammeln, beobachtete Spiele -> Abonnenten-Map.
+  // 1) Alle Abos aus dem Index lesen (ein get() statt list() pro Cron-Lauf).
+  const index = await getIndex(env);
   const matchSubs = new Map(); // matchId -> [{hash, subscription}]
-  let cursor;
-  do {
-    const list = await env.PUSH.list({ prefix: "sub:", cursor });
-    for (const key of list.keys) {
-      const hash = key.name.slice(4);
-      const entry = await env.PUSH.get(key.name, "json");
-      if (!entry?.subscription) continue;
-      for (const matchId of entry.matchIds || []) {
-        if (!matchSubs.has(matchId)) matchSubs.set(matchId, []);
-        matchSubs.get(matchId).push({ hash, subscription: entry.subscription });
-      }
+  for (const [hash, entry] of Object.entries(index)) {
+    if (!entry?.subscription) continue;
+    for (const matchId of entry.matchIds || []) {
+      if (!matchSubs.has(matchId)) matchSubs.set(matchId, []);
+      matchSubs.get(matchId).push({ hash, subscription: entry.subscription });
     }
-    cursor = list.list_complete ? undefined : list.cursor;
-  } while (cursor);
+  }
 
   if (matchSubs.size === 0) return;
 
@@ -263,14 +268,20 @@ async function checkGoals(env) {
   }
 
   // 3) Betroffene Abos wecken; abgelaufene aufraeumen.
+  let indexChanged = false;
   for (const [hash, subscription] of wakes) {
     try {
       const r = await sendWake(env, subscription);
-      if (r.status === 404 || r.status === 410) await delSub(env, hash);
+      if (r.status === 404 || r.status === 410) {
+        delete index[hash];
+        await env.PUSH.delete(`pending:${hash}`);
+        indexChanged = true;
+      }
     } catch {
       // einzelnen Push-Fehler ignorieren
     }
   }
+  if (indexChanged) await putIndex(env, index);
 }
 
 export default {
