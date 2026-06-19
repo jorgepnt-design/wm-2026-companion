@@ -9,9 +9,9 @@ interface Props {
 
 export function Layout({ page, onNavigate, children }: Props) {
   return (
-    <div className="mx-auto flex min-h-screen max-w-7xl gap-6 px-4 py-4 pb-24 md:pb-4">
+    <div className="fixed inset-0 mx-auto flex max-w-7xl gap-6 px-4 md:py-4">
       <Navigation current={page} onNavigate={onNavigate} />
-      <main className="min-w-0 flex-1">{children}</main>
+      <main className="min-w-0 flex-1 overflow-y-auto overscroll-contain py-4 pb-24 md:pb-4">{children}</main>
     </div>
   );
 }

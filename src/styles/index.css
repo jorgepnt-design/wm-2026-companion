@@ -3,8 +3,7 @@
 @tailwind utilities;
 
 html {
-  /* iOS: stabile Viewport-Hoehe, verhindert Springen der fixen Leiste. */
-  height: -webkit-fill-available;
+  height: 100%;
 }
 
 :root {
@@ -16,15 +15,20 @@ html {
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
-  min-height: 100dvh;
-  /* Gummiband-Overscroll abschalten, damit die untere Leiste nicht mitwandert. */
-  overscroll-behavior-y: none;
+  height: 100%;
+  /* Body bleibt unscrollbar, damit fixierte Elemente (z.B. untere Navigation) auf iOS
+     nicht durch Safari-eigenes Scroll-Repainting mitwandern. Gescrollt wird nur innerhalb
+     des Hauptinhalts (siehe Layout.tsx). */
+  overflow: hidden;
+  overscroll-behavior: none;
   background:
     radial-gradient(circle at 20% 0%, rgba(214, 168, 79, 0.14), transparent 34rem),
     linear-gradient(180deg, #081633 0%, #061024 52%, #050b18 100%);
-  background-attachment: fixed;
   color: #f6f8fb;
+}
+
+#root {
+  height: 100%;
 }
 
 button,
